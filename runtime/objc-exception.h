@@ -33,23 +33,33 @@
 
 OBJC_EXPORT void
 objc_exception_throw(id _Nonnull exception)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 OBJC_EXPORT void
 objc_exception_try_enter(void * _Nonnull localExceptionData)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 OBJC_EXPORT void
 objc_exception_try_exit(void * _Nonnull localExceptionData)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 OBJC_EXPORT id _Nonnull
 objc_exception_extract(void * _Nonnull localExceptionData)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 OBJC_EXPORT int objc_exception_match(Class _Nonnull exceptionClass,
                                      id _Nonnull exception)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 
 typedef struct {
@@ -64,12 +74,16 @@ typedef struct {
 // get table; version tells how many
 OBJC_EXPORT void
 objc_exception_get_functions(objc_exception_functions_t * _Nullable table)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 // set table
 OBJC_EXPORT void
 objc_exception_set_functions(objc_exception_functions_t * _Nullable table)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.3);
+    __OSX_AVAILABLE(10.3) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 
 // !__OBJC2__
@@ -125,11 +139,15 @@ objc_setUncaughtExceptionHandler(objc_uncaught_exception_handler _Nonnull fn)
 OBJC_EXPORT uintptr_t
 objc_addExceptionHandler(objc_exception_handler _Nonnull fn,
                          void * _Nullable context)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.5);
+    __OSX_AVAILABLE(10.5) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 OBJC_EXPORT void
 objc_removeExceptionHandler(uintptr_t token)
-    OBJC_OSX_AVAILABLE_OTHERS_UNAVAILABLE(10.5);
+    __OSX_AVAILABLE(10.5) 
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE;
 
 // __OBJC2__
 #endif

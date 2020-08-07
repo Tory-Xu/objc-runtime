@@ -37,9 +37,7 @@
 
 extern monitor_t classInitLock;
 extern mutex_t selLock;
-#if CONFIG_USE_CACHE_LOCK
 extern mutex_t cacheUpdateLock;
-#endif
 extern recursive_mutex_t loadMethodLock;
 extern mutex_t crashlog_lock;
 extern spinlock_t objcMsgLogLock;

@@ -358,6 +358,8 @@ void *NXMapInsert(NXMapTable *table, const void *key, const void *value) {
     }
 }
 
+static int mapRemove = 0;
+
 void *NXMapRemove(NXMapTable *table, const void *key) {
     MapPair	*pairs = (MapPair *)table->buckets;
     unsigned	index = bucketOf(table, key);
@@ -366,6 +368,7 @@ void *NXMapRemove(NXMapTable *table, const void *key) {
     int		found = 0;
     const void	*old = NULL;
     if (pair->key == NX_MAPNOTAKEY) return NULL;
+    mapRemove ++;
     /* compute chain */
     {
 	unsigned	index2 = index;

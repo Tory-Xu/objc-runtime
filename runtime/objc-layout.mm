@@ -338,8 +338,8 @@ layout_bitmap_grow(layout_bitmap *bits, size_t newCount)
             realloc(bits->bits, (newAllocated+7) / 8);
         bits->bitsAllocated = newAllocated;
     }
-    ASSERT(bits->bitsAllocated >= bits->bitCount);
-    ASSERT(bits->bitsAllocated >= newCount);
+    assert(bits->bitsAllocated >= bits->bitCount);
+    assert(bits->bitsAllocated >= newCount);
 }
 
 

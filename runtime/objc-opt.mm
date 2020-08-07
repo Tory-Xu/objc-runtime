@@ -49,29 +49,9 @@ bool header_info::isPreoptimized() const
     return false;
 }
 
-bool header_info::hasPreoptimizedSelectors() const
-{
-    return false;
-}
-
-bool header_info::hasPreoptimizedClasses() const
-{
-    return false;
-}
-
-bool header_info::hasPreoptimizedProtocols() const
-{
-    return false;
-}
-
 objc_selopt_t *preoptimizedSelectors(void) 
 {
     return nil;
-}
-
-bool sharedCacheSupportsProtocolRoots(void)
-{
-    return false;
 }
 
 Protocol *getPreoptimizedProtocol(const char *name)
@@ -93,6 +73,11 @@ Class* copyPreoptimizedClasses(const char *name, int *outCount)
 {
     *outCount = 0;
     return nil;
+}
+
+bool sharedRegionContains(const void *ptr)
+{
+    return false;
 }
 
 header_info *preoptimizedHinfoForHeader(const headerType *mhdr)
@@ -124,7 +109,6 @@ void preopt_init(void)
 
 using objc_opt::objc_stringhash_offset_t;
 using objc_opt::objc_protocolopt_t;
-using objc_opt::objc_protocolopt2_t;
 using objc_opt::objc_clsopt_t;
 using objc_opt::objc_headeropt_ro_t;
 using objc_opt::objc_headeropt_rw_t;
@@ -137,6 +121,8 @@ __BEGIN_DECLS
 // opt is initialized to ~0 to detect incorrect use before preopt_init()
 
 static const objc_opt_t *opt = (objc_opt_t *)~0;
+static uintptr_t shared_cache_start;
+static uintptr_t shared_cache_end;
 static bool preoptimized;
 
 extern const objc_opt_t _objc_opt_data;  // in __TEXT, __objc_opt_ro
@@ -175,82 +161,19 @@ bool header_info::isPreoptimized() const
     return YES;
 }
 
-bool header_info::hasPreoptimizedSelectors() const
-{
-    // preoptimization disabled for some reason
-    if (!preoptimized) return NO;
-
-    return info()->optimizedByDyld() || info()->optimizedByDyldClosure();
-}
-
-bool header_info::hasPreoptimizedClasses() const
-{
-    // preoptimization disabled for some reason
-    if (!preoptimized) return NO;
-
-    return info()->optimizedByDyld() || info()->optimizedByDyldClosure();
-}
-
-bool header_info::hasPreoptimizedProtocols() const
-{
-    // preoptimization disabled for some reason
-    if (!preoptimized) return NO;
-
-    return info()->optimizedByDyld() || info()->optimizedByDyldClosure();
-}
-
 
 objc_selopt_t *preoptimizedSelectors(void) 
 {
     return opt ? opt->selopt() : nil;
 }
 
-bool sharedCacheSupportsProtocolRoots(void)
+
+Protocol *getPreoptimizedProtocol(const char *name)
 {
-    return (opt != nil) && (opt->protocolopt2() != nil);
-}
-
-
-Protocol *getSharedCachePreoptimizedProtocol(const char *name)
-{
-    // Look in the new table if we have it
-    if (objc_protocolopt2_t *protocols2 = opt ? opt->protocolopt2() : nil) {
-        // Note, we have to pass the lambda directly here as otherwise we would try
-        // message copy and autorelease.
-        return (Protocol *)protocols2->getProtocol(name, [](const void* hi) -> bool {
-            return ((header_info *)hi)->isLoaded();
-        });
-    }
-
     objc_protocolopt_t *protocols = opt ? opt->protocolopt() : nil;
     if (!protocols) return nil;
 
     return (Protocol *)protocols->getProtocol(name);
-}
-
-
-Protocol *getPreoptimizedProtocol(const char *name)
-{
-    // Try table from dyld closure first.  It was built to ignore the dupes it
-    // knows will come from the cache, so anything left in here was there when
-    // we launched
-    Protocol *result = nil;
-    // Note, we have to pass the lambda directly here as otherwise we would try
-    // message copy and autorelease.
-    _dyld_for_each_objc_protocol(name, [&result](void* protocolPtr, bool isLoaded, bool* stop) {
-        // Skip images which aren't loaded.  This supports the case where dyld
-        // might soft link an image from the main binary so its possibly not
-        // loaded yet.
-        if (!isLoaded)
-            return;
-
-        // Found a loaded image with this class name, so stop the search
-        result = (Protocol *)protocolPtr;
-        *stop = true;
-    });
-    if (result) return result;
-
-    return getSharedCachePreoptimizedProtocol(name);
 }
 
 
@@ -269,25 +192,6 @@ Class getPreoptimizedClass(const char *name)
 {
     objc_clsopt_t *classes = opt ? opt->clsopt() : nil;
     if (!classes) return nil;
-
-    // Try table from dyld closure first.  It was built to ignore the dupes it
-    // knows will come from the cache, so anything left in here was there when
-    // we launched
-    Class result = nil;
-    // Note, we have to pass the lambda directly here as otherwise we would try
-    // message copy and autorelease.
-    _dyld_for_each_objc_class(name, [&result](void* classPtr, bool isLoaded, bool* stop) {
-        // Skip images which aren't loaded.  This supports the case where dyld
-        // might soft link an image from the main binary so its possibly not
-        // loaded yet.
-        if (!isLoaded)
-            return;
-
-        // Found a loaded image with this class name, so stop the search
-        result = (Class)classPtr;
-        *stop = true;
-    });
-    if (result) return result;
 
     void *cls;
     void *hi;
@@ -354,6 +258,16 @@ Class* copyPreoptimizedClasses(const char *name, int *outCount)
     return nil;
 }
 
+/***********************************************************************
+* Return YES if the given pointer lies within the shared cache.
+* If the shared cache is not set up or is not valid,
+**********************************************************************/
+bool sharedRegionContains(const void *ptr)
+{
+    uintptr_t address = (uintptr_t)ptr;
+    return shared_cache_start <= address && address < shared_cache_end;
+}
+
 namespace objc_opt {
 struct objc_headeropt_ro_t {
     uint32_t count;
@@ -362,7 +276,7 @@ struct objc_headeropt_ro_t {
 
     header_info *get(const headerType *mhdr) 
     {
-        ASSERT(entsize == sizeof(header_info));
+        assert(entsize == sizeof(header_info));
 
         int32_t start = 0;
         int32_t end = count;
@@ -423,7 +337,7 @@ header_info_rw *getPreoptimizedHeaderRW(const struct header_info *const hdr)
                     hdr->fname(), hdr, hinfoRO, hinfoRW);
     }
     int32_t index = (int32_t)(hdr - hinfoRO->headers);
-    ASSERT(hinfoRW->entsize == sizeof(header_info_rw));
+    assert(hinfoRW->entsize == sizeof(header_info_rw));
     return &hinfoRW->headers[index];
 }
 
@@ -432,10 +346,12 @@ void preopt_init(void)
 {
     // Get the memory region occupied by the shared cache.
     size_t length;
-    const uintptr_t start = (uintptr_t)_dyld_get_shared_cache_range(&length);
-
+    const void *start = _dyld_get_shared_cache_range(&length);
     if (start) {
-        objc::dataSegmentsRanges.add(start, start + length);
+        shared_cache_start = (uintptr_t)start;
+        shared_cache_end = shared_cache_start + length;
+    } else {
+        shared_cache_start = shared_cache_end = 0;
     }
     
     // `opt` not set at compile time in order to detect too-early usage

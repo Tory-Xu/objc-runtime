@@ -28,7 +28,6 @@
 
 #include "objc-private.h"
 #include "objc-loadmethod.h"
-#include "objc-cache.h"
 
 #if TARGET_OS_WIN32
 
@@ -103,7 +102,7 @@ WINBOOL APIENTRY DllMain( HMODULE hModule,
     case DLL_PROCESS_ATTACH:
         environ_init();
         tls_init();
-        runtime_init();
+        lock_init();
         sel_init(3500);  // old selector heuristic
         exception_init();
         break;
@@ -254,12 +253,17 @@ static header_info * addHeader(const headerType *mhdr, const char *path, int &to
         // Verify image_info
         size_t info_size = 0;
         const objc_image_info *image_info = _getObjcImageInfo(mhdr,&info_size);
-        ASSERT(image_info == hi->info());
+        assert(image_info == hi->info());
 #endif
     }
     else 
     {
         // Didn't find an hinfo in the dyld shared cache.
+
+        // Weed out duplicates
+        for (hi = FirstHeader; hi; hi = hi->getNext()) {
+            if (mhdr == hi->mhdr()) return NULL;
+        }
 
         // Locate the __OBJC segment
         size_t info_size = 0;
@@ -338,7 +342,7 @@ linksToLibrary(const header_info *hi, const char *name)
 **********************************************************************/
 static bool shouldRejectGCApp(const header_info *hi)
 {
-    ASSERT(hi->mhdr()->filetype == MH_EXECUTE);
+    assert(hi->mhdr()->filetype == MH_EXECUTE);
 
     if (!hi->info()->supportsGC()) {
         // App does not use GC. Don't reject it.
@@ -382,7 +386,7 @@ static bool shouldRejectGCApp(const header_info *hi)
 **********************************************************************/
 static bool shouldRejectGCImage(const headerType *mhdr)
 {
-    ASSERT(mhdr->filetype != MH_EXECUTE);
+    assert(mhdr->filetype != MH_EXECUTE);
 
     objc_image_info *image_info;
     size_t size;
@@ -415,25 +419,6 @@ static bool shouldRejectGCImage(const headerType *mhdr)
 #endif
 
 
-// Swift currently adds 4 callbacks.
-static GlobalSmallVector<objc_func_loadImage, 4> loadImageFuncs;
-
-void objc_addLoadImageFunc(objc_func_loadImage _Nonnull func) {
-    // Not supported on the old runtime. Not that the old runtime is supported anyway.
-#if __OBJC2__
-    mutex_locker_t lock(runtimeLock);
-    
-    // Call it with all the existing images first.
-    for (auto header = FirstHeader; header; header = header->getNext()) {
-        func((struct mach_header *)header->mhdr());
-    }
-    
-    // Add it to the vector for future loads.
-    loadImageFuncs.append(func);
-#endif
-}
-
-
 /***********************************************************************
 * map_images_nolock
 * Process the given images which are being mapped in by dyld.
@@ -451,6 +436,7 @@ void objc_addLoadImageFunc(objc_func_loadImage _Nonnull func) {
 #include "objc-file-old.h"
 #endif
 
+// runtim：3
 void 
 map_images_nolock(unsigned mhCount, const char * const mhPaths[],
                   const struct mach_header * const mhdrs[])
@@ -464,7 +450,7 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
     // This function is called before ordinary library initializers. 
     // fixme defer initialization until an objc-using image is found?
     if (firstTime) {
-        preopt_init();
+        preopt_init();  // 优化共享缓存的初始化
     }
 
     if (PrintImages) {
@@ -512,7 +498,7 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
                 }
 #endif
             }
-            
+            // runtim：4 加载所有的类
             hList[hCount++] = hi;
             
             if (PrintImages) {
@@ -533,8 +519,9 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
     // executable does not contain Objective-C code but Objective-C 
     // is dynamically loaded later.
     if (firstTime) {
-        sel_init(selrefCount);
-        arr_init();
+        // runtim：5
+        sel_init(selrefCount); //初始化方法列表并注册内部使用的方法
+        arr_init(); // 进行自动释放池和散列表的初始化
 
 #if SUPPORT_GC_COMPAT
         // Reject any GC images linked to the main executable.
@@ -589,17 +576,11 @@ map_images_nolock(unsigned mhCount, const char * const mhPaths[],
     }
 
     if (hCount > 0) {
+        // runtim：6 依次读取镜像文件中相关的类,遵守协议和类别信息并最终实现所有类
         _read_images(hList, hCount, totalClasses, unoptimizedTotalClasses);
     }
 
     firstTime = NO;
-    
-    // Call image load funcs after everything is set up.
-    for (auto func : loadImageFuncs) {
-        for (uint32_t i = 0; i < mhCount; i++) {
-            func(mhdrs[i]);
-        }
-    }
 }
 
 
@@ -691,9 +672,7 @@ static void defineLockOrder()
     lockdebug_lock_precedes_lock(&impLock, &crashlog_lock);
 #endif
     lockdebug_lock_precedes_lock(&selLock, &crashlog_lock);
-#if CONFIG_USE_CACHE_LOCK
     lockdebug_lock_precedes_lock(&cacheUpdateLock, &crashlog_lock);
-#endif
     lockdebug_lock_precedes_lock(&objcMsgLogLock, &crashlog_lock);
     lockdebug_lock_precedes_lock(&AltHandlerDebugLock, &crashlog_lock);
     lockdebug_lock_precedes_lock(&AssociationsManagerLock, &crashlog_lock);
@@ -715,9 +694,7 @@ static void defineLockOrder()
     lockdebug_lock_precedes_lock(&loadMethodLock, &impLock);
 #endif
     lockdebug_lock_precedes_lock(&loadMethodLock, &selLock);
-#if CONFIG_USE_CACHE_LOCK
     lockdebug_lock_precedes_lock(&loadMethodLock, &cacheUpdateLock);
-#endif
     lockdebug_lock_precedes_lock(&loadMethodLock, &objcMsgLogLock);
     lockdebug_lock_precedes_lock(&loadMethodLock, &AltHandlerDebugLock);
     lockdebug_lock_precedes_lock(&loadMethodLock, &AssociationsManagerLock);
@@ -746,9 +723,7 @@ static void defineLockOrder()
 #endif
     PropertyAndCppObjectAndAssocLocksPrecedeLock(&classInitLock);
     PropertyAndCppObjectAndAssocLocksPrecedeLock(&selLock);
-#if CONFIG_USE_CACHE_LOCK
     PropertyAndCppObjectAndAssocLocksPrecedeLock(&cacheUpdateLock);
-#endif
     PropertyAndCppObjectAndAssocLocksPrecedeLock(&objcMsgLogLock);
     PropertyAndCppObjectAndAssocLocksPrecedeLock(&AltHandlerDebugLock);
 
@@ -770,9 +745,7 @@ static void defineLockOrder()
     SideTableLocksPrecedeLock(&classInitLock);
     // Some operations may occur inside runtimeLock.
     lockdebug_lock_precedes_lock(&runtimeLock, &selLock);
-#if CONFIG_USE_CACHE_LOCK
     lockdebug_lock_precedes_lock(&runtimeLock, &cacheUpdateLock);
-#endif
     lockdebug_lock_precedes_lock(&runtimeLock, &DemangleCacheLock);
 #else
     // Runtime operations may occur inside SideTable locks
@@ -782,9 +755,7 @@ static void defineLockOrder()
     // Method lookup and fixup.
     lockdebug_lock_precedes_lock(&methodListLock, &classLock);
     lockdebug_lock_precedes_lock(&methodListLock, &selLock);
-#if CONFIG_USE_CACHE_LOCK
     lockdebug_lock_precedes_lock(&methodListLock, &cacheUpdateLock);
-#endif
     lockdebug_lock_precedes_lock(&methodListLock, &impLock);
     lockdebug_lock_precedes_lock(&classLock, &selLock);
     lockdebug_lock_precedes_lock(&classLock, &cacheUpdateLock);
@@ -824,9 +795,7 @@ void _objc_atfork_prepare()
     impLock.lock();
 #endif
     selLock.lock();
-#if CONFIG_USE_CACHE_LOCK
     cacheUpdateLock.lock();
-#endif
     objcMsgLogLock.lock();
     AltHandlerDebugLock.lock();
     StructLocks.lockAll();
@@ -848,9 +817,7 @@ void _objc_atfork_parent()
     objcMsgLogLock.unlock();
     crashlog_lock.unlock();
     loadMethodLock.unlock();
-#if CONFIG_USE_CACHE_LOCK
     cacheUpdateLock.unlock();
-#endif
     selLock.unlock();
     SideTableUnlockAll();
 #if __OBJC2__
@@ -884,9 +851,7 @@ void _objc_atfork_child()
     objcMsgLogLock.forceReset();
     crashlog_lock.forceReset();
     loadMethodLock.forceReset();
-#if CONFIG_USE_CACHE_LOCK
     cacheUpdateLock.forceReset();
-#endif
     selLock.forceReset();
     SideTableForceResetAll();
 #if __OBJC2__
@@ -910,6 +875,7 @@ void _objc_atfork_child()
 * Called by libSystem BEFORE library initialization time
 **********************************************************************/
 
+// runtim：1 runtime 初始化的方法
 void _objc_init(void)
 {
     static bool initialized = false;
@@ -920,11 +886,11 @@ void _objc_init(void)
     environ_init();
     tls_init();
     static_init();
-    runtime_init();
+    lock_init();
     exception_init();
-    cache_init();
-    _imp_implementationWithBlock_init();
-
+    // runtim：2
+    // map_images 主要是在image加载进内容后对其二进制内容进行解析，初始化里面的类的结构等。
+    // load_images 主要是调用call_load_methods。按照继承层次依次调用Class的+load方法然后再是Category的+load方法。
     _dyld_objc_notify_register(&map_images, load_images, unmap_image);
 }
 

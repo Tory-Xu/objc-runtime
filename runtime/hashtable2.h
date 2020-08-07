@@ -30,8 +30,10 @@
 #define _OBJC_LITTLE_HASHTABLE_H_
 
 #ifndef _OBJC_PRIVATE_H_
-#   define OBJC_HASH_AVAILABILITY \
-    OBJC_OSX_DEPRECATED_OTHERS_UNAVAILABLE(10.0, 10.1, "NXHashTable is deprecated")
+#   define OBJC_HASH_AVAILABILITY                             \
+    __OSX_DEPRECATED(10.0, 10.1, "NXHashTable is deprecated") \
+    __IOS_UNAVAILABLE __TVOS_UNAVAILABLE                      \
+    __WATCHOS_UNAVAILABLE __BRIDGEOS_UNAVAILABLE
 #else
 #   define OBJC_HASH_AVAILABILITY
 #endif

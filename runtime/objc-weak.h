@@ -82,9 +82,14 @@ struct weak_entry_t {
     union {
         struct {
             weak_referrer_t *referrers;
-            uintptr_t        out_of_line_ness : 2;
-            uintptr_t        num_refs : PTR_MINUS_2;
-            uintptr_t        mask;
+            /**
+             https://zhidao.baidu.com/question/65768309.html
+             int a:2  表示：a只占两个bit.一个字节为8个bit,a只有最右边两个bit保存数据.如 000000aa，int 是有符号整型，两个 bit 中第一位 1 表示负，0表示正
+             unsigned long out_of_line_ness : 2 表示： out_of_line_ness 只占2个 bit，unsigned long 无符号整型，两个 bit 中第一位不表示正负
+             */
+            uintptr_t/** unsigned long */        out_of_line_ness : 2; // 标记是否超出 inline_referrers 数组，超出时使用 referrers 记录引用
+            uintptr_t        num_refs : PTR_MINUS_2; // 引用计数
+            uintptr_t        mask; // 标记 referrers 分配内存大小
             uintptr_t        max_hash_displacement;
         };
         struct {
@@ -106,6 +111,7 @@ struct weak_entry_t {
         : referent(newReferent)
     {
         inline_referrers[0] = newReferrer;
+        // 数组内容置空
         for (int i = 1; i < WEAK_INLINE_COUNT; i++) {
             inline_referrers[i] = nil;
         }
@@ -117,9 +123,9 @@ struct weak_entry_t {
  * and weak_entry_t structs as their values.
  */
 struct weak_table_t {
-    weak_entry_t *weak_entries;
-    size_t    num_entries;
-    uintptr_t mask;
+    weak_entry_t *weak_entries; // 单链表
+    size_t    num_entries; // 记录节点数
+    uintptr_t mask; // 标记容量
     uintptr_t max_hash_displacement;
 };
 

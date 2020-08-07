@@ -40,29 +40,32 @@
 
 .data
 
-// _objc_restartableRanges is used by method dispatch
+// _objc_entryPoints and _objc_exitPoints are used by objc
 // to get the critical regions for which method caches 
 // cannot be garbage collected.
 
-.macro RestartableEntry
-	.long	$0
+.align 2
+.private_extern _objc_entryPoints
+_objc_entryPoints:
+	.long	__cache_getImp
+	.long	__cache_getMethod
+	.long	_objc_msgSend
+	.long	_objc_msgSend_fpret
+	.long	_objc_msgSend_stret
+	.long	_objc_msgSendSuper
+	.long	_objc_msgSendSuper_stret
 	.long	0
-	.short	$1 - $0
-	.short	0xffff // The old runtime doesn't support kernel based recovery
-	.long	0
-.endmacro
 
-	.align 4
-	.private_extern _objc_restartableRanges
-_objc_restartableRanges:
-	RestartableEntry __cache_getImp, LGetImpExit
-	RestartableEntry __cache_getMethod, LGetMethodExit
-	RestartableEntry _objc_msgSend, LMsgSendExit
-	RestartableEntry _objc_msgSend_fpret, LMsgSendFpretExit
-	RestartableEntry _objc_msgSend_stret, LMsgSendStretExit
-	RestartableEntry _objc_msgSendSuper, LMsgSendSuperExit
-	RestartableEntry _objc_msgSendSuper_stret, LMsgSendSuperStretExit
-	.fill	16, 1, 0
+.private_extern _objc_exitPoints
+_objc_exitPoints:
+	.long	LGetImpExit
+	.long	LGetMethodExit
+	.long	LMsgSendExit
+	.long	LMsgSendFpretExit
+	.long	LMsgSendStretExit
+	.long	LMsgSendSuperExit
+	.long	LMsgSendSuperStretExit
+	.long	0
 
 
 /********************************************************************
@@ -441,12 +444,10 @@ LMsgSendHitInstrumentDone_$0_$1_$2:
 	movdqa  %xmm1, 2*16(%esp)
 	movdqa  %xmm0, 1*16(%esp)
 	
-	// lookUpImpOrForward(obj, sel, cls, LOOKUP_INITIALIZE | LOOKUP_RESOLVER)
-	movl	$$3,  12(%esp)		// LOOKUP_INITIALIZE | LOOKUP_RESOLVER
 	movl	%eax, 8(%esp)		// class
 	movl	%ecx, 4(%esp)		// selector
 	movl	%edx, 0(%esp)		// receiver
-	call	_lookUpImpOrForward
+	call	__class_lookupMethodAndLoadCache3
 
 	movdqa  4*16(%esp), %xmm3
 	movdqa  3*16(%esp), %xmm2
